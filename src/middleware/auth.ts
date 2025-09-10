@@ -1,48 +1,62 @@
-import { NextFunction  , Request, Response} from "express";
+import { NextFunction, Request, Response } from "express";
 import { logger } from "../config/logger";
-import jwt from 'jsonwebtoken'
+import jwt from 'jsonwebtoken';
 import { JWTPayload } from "../types";
-import { database } from '@/config/database' 
+import { database } from '../config/database'; // Fixed import path
 import { eq } from "drizzle-orm";
-import { admins } from "db/schema";
+import { admins } from "../db/schema"; // Fixed import path
 
-//Extends Express's Request type to optionally include admin
+// Extend Express's Request type to optionally include admin
 declare global {
-    namespace Express {
-        interface Request {
-            admin? : any
-        }
+  namespace Express {
+    interface Request {
+      admin?: any;
     }
+  }
 }
 
 export const authenticate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const token = req.header("Authorization")?.replace("Bearer ", "");
-    (`authenticate: Processing token for request to ${req.path}`);
-
+    logger.info(`authenticate: Processing token for request to ${req.path}`); // Fixed logger call
+    
     if (!token) {
-      console.error("authenticate: No token provided");
-      res.status(401).json({ success: false, error: "Access denied. No token provided." });
+      logger.error("authenticate: No token provided");
+      res.status(401).json({ 
+        success: false, 
+        error: "Access denied. No token provided." 
+      });
       return;
     }
 
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
-      console.error("authenticate: JWT_SECRET is not defined");
-      res.status(500).json({ success: false, error: "Server configuration error" });
+      logger.error("authenticate: JWT_SECRET is not defined");
+      res.status(500).json({ 
+        success: false, 
+        error: "Server configuration error" 
+      });
       return;
     }
 
     const decoded = jwt.verify(token, jwtSecret) as JWTPayload;
-    (`authenticate: Token decoded for admin ID: ${decoded.adminId}`);
+    logger.info(`authenticate: Token decoded for admin ID: ${decoded.adminId}`);
 
     const db = database.getDb();
-    const adminResult = await db.select().from(admins).where(eq(admins.id, decoded.adminId)).limit(1);
+    const adminResult = await db
+      .select()
+      .from(admins)
+      .where(eq(admins.id, decoded.adminId))
+      .limit(1);
+    
     const admin = adminResult[0];
 
     if (!admin || !admin.isActive) {
-      console.error(`authenticate: Invalid token or inactive admin for ID: ${decoded.adminId}`);
-      res.status(401).json({ success: false, error: "Invalid token or admin account is inactive" });
+      logger.error(`authenticate: Invalid token or inactive admin for ID: ${decoded.adminId}`);
+      res.status(401).json({ 
+        success: false, 
+        error: "Invalid token or admin account is inactive" 
+      });
       return;
     }
 
@@ -50,30 +64,33 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     req.admin = adminWithoutPassword;
     next();
   } catch (error) {
-    console.error(`authenticate: Authentication error for ${req.path}:`, error);
-    res.status(401).json({ success: false, error: "Invalid token" });
+    logger.error(`authenticate: Authentication error for ${req.path}:`, error);
+    res.status(401).json({ 
+      success: false, 
+      error: "Invalid token" 
+    });
     return;
   }
 };
 
-
-export const authorize = (...roles : string[]) => {
-    return (req : Request , res : Response , next : NextFunction) : void => {
-        if(!req.admin){
-             res.status(401).json({
-                success : false,
-                message : 'Access denied , Authentication required'
-            })
-            return  //add return to stop execution
-        }
-
-        if(!roles.includes(req.admin.role)){
-             res.status(403).json({
-                success : false,
-                message : 'Access denied , Insufficient permissions'    
-            })
-            return 
-        }
-        next()
+export const authorize = (...roles: string[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.admin) {
+      res.status(401).json({
+        success: false,
+        error: 'Access denied. Authentication required'
+      });
+      return;
     }
-}
+
+    if (!roles.includes(req.admin.role)) {
+      res.status(403).json({
+        success: false,
+        error: 'Access denied. Insufficient permissions'
+      });
+      return;
+    }
+
+    next();
+  };
+};
