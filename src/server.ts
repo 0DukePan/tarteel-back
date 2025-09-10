@@ -30,6 +30,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "https://tarteel-front.vercel.app",
   "https://tarteel-front-git-main-0dukepans-projects.vercel.app",
+  "https://tarteel-front-dy2zc1yne-0dukepans-projects.vercel.app"
 ];
 const vercelPreviewRegex = /^https:\/\/tarteel-front-[a-z0-9]+-0dukepans-projects\.vercel\.app$/;
 
