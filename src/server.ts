@@ -19,7 +19,11 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.set("trust proxy", true);
+// ✅ Fix: لا تسيبها true مفتوحة
+// في Render عندك Proxy واحد، فـ 1 يكفي
+app.set("trust proxy", 1);
+// أو لو عايز أكثر أمان
+// app.set("trust proxy", ["loopback", "linklocal", "uniquelocal"]);
 
 app.use(helmet());
 app.use(compression());
@@ -56,9 +60,12 @@ app.use(
 
 app.options("*", cors());
 
+// ✅ Rate limiter (يشتغل بعد ما عدلنا trust proxy)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
+  standardHeaders: true, // يرسل RateLimit-* headers
+  legacyHeaders: false,  // يعطل X-RateLimit-* القديم
   message: {
     success: false,
     error: "Too many requests from this IP, please try again later.",
