@@ -18,6 +18,8 @@ export class TeacherService {
                 email : teachers.email,
                 phone : teachers.phone,
                 specialization : teachers.specialization,
+                biography: teachers.biography,
+                profilePicture: teachers.profilePicture,
                 createdAt : teachers.createdAt,
                 updatedAt : teachers.updatedAt,
                 classCount : count(classes.id)
@@ -96,6 +98,8 @@ export class TeacherService {
                 email : teachers.email,
                 phone : teachers.phone,
                 specialization : teachers.specialization,
+                biography: teachers.biography,
+                profilePicture: teachers.profilePicture,
                 createdAt : teachers.createdAt,
                 updatedAt : teachers.updatedAt,
             }).from(teachers).where(eq(teachers.id , teacherId)).limit(1)

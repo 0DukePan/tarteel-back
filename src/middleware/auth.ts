@@ -4,21 +4,20 @@ import jwt from 'jsonwebtoken';
 import { JWTPayload } from "../types";
 import { database } from '../config/database'; // Fixed import path
 import { eq } from "drizzle-orm";
-import { admins } from "../db/schema"; // Fixed import path
+import { admins, teachers, parents } from "../db/schema";
 
-// Extend Express's Request type to optionally include admin
 declare global {
   namespace Express {
     interface Request {
-      admin?: any;
+      user?: any;
     }
   }
 }
 
 export const authenticate = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const token = req.header("Authorization")?.replace("Bearer ", "");
-    logger.info(`authenticate: Processing token for request to ${req.path}`); // Fixed logger call
+    const token = req.cookies.auth_token || req.header("Authorization")?.replace("Bearer ", "");
+    logger.info(`authenticate: Processing token for request to ${req.path}`);
     
     if (!token) {
       logger.error("authenticate: No token provided");
@@ -40,28 +39,47 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     }
 
     const decoded = jwt.verify(token, jwtSecret) as JWTPayload;
-    logger.info(`authenticate: Token decoded for admin ID: ${decoded.adminId}`);
+    logger.info(`authenticate: Token decoded for user ID: ${decoded.userId}, Role: ${decoded.role}`);
 
     const db = database.getDb();
-    const adminResult = await db
-      .select()
-      .from(admins)
-      .where(eq(admins.id, decoded.adminId))
-      .limit(1);
-    
-    const admin = adminResult[0];
+    let user: any;
 
-    if (!admin || !admin.isActive) {
-      logger.error(`authenticate: Invalid token or inactive admin for ID: ${decoded.adminId}`);
+    switch (decoded.role) {
+      case 'admin':
+        const adminResult = await db.select().from(admins).where(eq(admins.id, decoded.userId)).limit(1);
+        user = adminResult[0];
+        if (user) user.type = 'admin';
+        break;
+      case 'teacher':
+        const teacherResult = await db.select().from(teachers).where(eq(teachers.id, decoded.userId)).limit(1);
+        user = teacherResult[0];
+        if (user) user.type = 'teacher';
+        break;
+      case 'parent':
+        const parentResult = await db.select().from(parents).where(eq(parents.id, decoded.userId)).limit(1);
+        user = parentResult[0];
+        if (user) user.type = 'parent';
+        break;
+      default:
+        logger.error(`authenticate: Unknown user role: ${decoded.role}`);
+        res.status(401).json({ 
+          success: false, 
+          error: "Invalid token: Unknown role" 
+        });
+        return;
+    }
+    
+    if (!user || !user.isActive && user.type === 'admin') { // Only admins have isActive field
+      logger.error(`authenticate: Invalid token or inactive user for ID: ${decoded.userId}`);
       res.status(401).json({ 
         success: false, 
-        error: "Invalid token or admin account is inactive" 
+        error: "Invalid token or account is inactive" 
       });
       return;
     }
 
-    const { password, ...adminWithoutPassword } = admin;
-    req.admin = adminWithoutPassword;
+    const { password, ...userWithoutPassword } = user;
+    req.user = { ...userWithoutPassword, role: decoded.role }; // Attach user and role to request
     next();
   } catch (error) {
     logger.error(`authenticate: Authentication error for ${req.path}:`, error);
@@ -75,7 +93,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
 
 export const authorize = (...roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction): void => {
-    if (!req.admin) {
+    if (!req.user) {
       res.status(401).json({
         success: false,
         error: 'Access denied. Authentication required'
@@ -83,7 +101,7 @@ export const authorize = (...roles: string[]) => {
       return;
     }
 
-    if (!roles.includes(req.admin.role)) {
+    if (!roles.includes(req.user.role)) {
       res.status(403).json({
         success: false,
         error: 'Access denied. Insufficient permissions'

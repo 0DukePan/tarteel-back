@@ -5,11 +5,16 @@ import { Request, Response } from "express"
 import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
 import dotenv from "dotenv"
-import { AppError, asyncHandler } from "middleware/errorHandler"
-import { logger } from "config/logger"
+import { AppError, asyncHandler } from "../middleware/errorHandler"
+import { logger } from "../config/logger"
 import type { JWTPayload } from "../types"
 
 dotenv.config()
+
+// Extend Express Request to include user from auth middleware
+interface AuthenticatedRequest extends Request {
+  user?: JWTPayload
+}
 
 // ------------------ LOGIN ------------------
 export const login = asyncHandler(async (req: Request, res: Response) => {
@@ -42,9 +47,9 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const payload: JWTPayload = {
-    adminId: admin.id,
+    userId: admin.id,
     email: admin.email,
-    role: admin.role,
+    role: admin.role as 'admin' | 'teacher' | 'parent' | 'student',
   }
 
   const jwtOptions: jwt.SignOptions = {
@@ -53,11 +58,11 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 
   const token = jwt.sign(payload, jwtSecret, jwtOptions)
 
-  // Set cookie
+  // Set cookie (for server-side)
   res.cookie("auth_token", token, {
-    httpOnly: true,
+    httpOnly: false, // Allow JS access so frontend can read it
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    sameSite: "lax", // Allow cookie in cross-origin requests
     maxAge: 7 * 24 * 60 * 60 * 1000,
     path: "/",
   })
@@ -72,18 +77,23 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     message: "Login successful",
     data: {
       admin: adminResponse,
-      token,
+      token, // Include token in response for frontend
     },
   })
 })
 
 // ------------------ GET PROFILE ------------------
-export const getProfile = asyncHandler(async (req: Request, res: Response) => {
+export const getProfile = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   const db = database.getDb()
+
+  if (!req.user) {
+    throw new AppError("Not authenticated", 401)
+  }
+
   const admin = await db
     .select()
     .from(admins)
-    .where(eq(admins.id, req.admin.id))
+    .where(eq(admins.id, req.user.userId))
     .limit(1)
 
   if (admin.length === 0) {
@@ -99,9 +109,13 @@ export const getProfile = asyncHandler(async (req: Request, res: Response) => {
 })
 
 // ------------------ UPDATE PROFILE ------------------
-export const updateProfile = asyncHandler(async (req: Request, res: Response) => {
+export const updateProfile = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
   const db = database.getDb()
   const { username, email } = req.body
+
+  if (!req.user) {
+    throw new AppError("Not authenticated", 401)
+  }
 
   await db
     .update(admins)
@@ -110,12 +124,12 @@ export const updateProfile = asyncHandler(async (req: Request, res: Response) =>
       email,
       updatedAt: new Date(),
     })
-    .where(eq(admins.id, req.admin.id))
+    .where(eq(admins.id, req.user.userId))
 
   const updatedAdminResult = await db
     .select()
     .from(admins)
-    .where(eq(admins.id, req.admin.id))
+    .where(eq(admins.id, req.user.userId))
     .limit(1)
 
   const { password, ...adminWithoutPassword } = updatedAdminResult[0]

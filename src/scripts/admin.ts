@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken';
 import { neon, NeonQueryFunction } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import bcrypt from "bcryptjs";
@@ -6,6 +7,16 @@ import { logger } from "../config/logger";
 import dotenv from "dotenv";
 
 dotenv.config();
+
+const jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret) {
+  logger.error("JWT_SECRET environment variable is not set");
+  process.exit(1);
+}
+
+export const generateAuthToken = (userId: string, email: string, role: string): string => {
+  return jwt.sign({ userId, email, role }, jwtSecret, { expiresIn: '1h' });
+};
 
 const insertAdmin = async () => {
   try {
@@ -21,10 +32,8 @@ const insertAdmin = async () => {
 
     logger.info("Starting admin insertion...");
 
-    // Hash the password
     const hashedPassword = await bcrypt.hash("admin123", 12);
 
-    // Insert admin
     await db.insert(admins).values({
       username: "newAdmin",
       email: "newadmin@quranschool.com",
